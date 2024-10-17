@@ -18,60 +18,37 @@ data = load_data()
 if "train_model" not in st.session_state:
     st.session_state.train_model = False
 
+X = data.drop(columns=['day', 'month', 'year', 'Classes'])
+y = data['Classes'].str.strip()
+
+label_encoder = LabelEncoder()
+y = label_encoder.fit_transform(y)
+
+X = X.apply(pd.to_numeric, errors='coerce')
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+pca = PCA(n_components=X_train.shape[1])
+X_train_pca = pca.fit_transform(X_train)
+X_test_pca = pca.transform(X_test)
+
 st.title("Predicción de Incendios Forestales con Árboles de Decisión")
 
-st.subheader("Selecciona los Parámetros del Modelo")
+def entrenar_y_mostrar_modelo(clasificador):
+    clasificador.fit(X_train_pca, y_train)
+    y_pred = clasificador.predict(X_test_pca)
 
-with st.expander("Selecciona los Parámetros de Entrenamiento", expanded=not st.session_state.train_model):
-    temperatura = st.slider("Temperatura", min_value=0.0, max_value=50.0, value=25.0)
-    humedad = st.slider("Humedad Relativa (%)", min_value=0, max_value=100, value=50)
-    velocidad_viento = st.slider("Velocidad del Viento (km/h)", min_value=0, max_value=100, value=10)
-    lluvia = st.slider("Lluvia (mm)", min_value=0.0, max_value=50.0, value=0.0)
-    
-    if st.button("Entrenar Modelo"):
-        st.session_state.train_model = True  
-        st.success("Entrenando el modelo...")
+    accuracy = accuracy_score(y_test, y_pred)
+    precision = precision_score(y_test, y_pred)
+    recall = recall_score(y_test, y_pred)
+    f1 = f1_score(y_test, y_pred)
 
-if st.session_state.train_model:
-    X = data.drop(columns=['day', 'month', 'year', 'Classes'])
-    y = data['Classes'].str.strip()
+    st.write(f"Accuracy: {accuracy:.4f}")
+    st.write(f"Precision: {precision:.4f}")
+    st.write(f"Recall: {recall:.4f}")
+    st.write(f"F1 Score: {f1:.4f}")
 
-    label_encoder = LabelEncoder()
-    y = label_encoder.fit_transform(y)
-
-    X = X.apply(pd.to_numeric, errors='coerce')
-
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-
-    pca = PCA(n_components=X_train.shape[1])
-    X_train_pca = pca.fit_transform(X_train)
-    X_test_pca = pca.transform(X_test)
-
-    dt_classifier = DecisionTreeClassifier()
-    param_grid = {
-        'criterion': ['gini', 'entropy'],
-        'max_depth': [None, 10, 20, 30],
-        'min_samples_split': [2, 5, 10],
-        'min_samples_leaf': [1, 2, 4]
-    }
-    
-    grid_search = GridSearchCV(dt_classifier, param_grid, cv=5)
-    grid_search.fit(X_train_pca, y_train)
-
-    best_dt = grid_search.best_estimator_
-    y_pred = best_dt.predict(X_test_pca)
-
-    accuracyDT = accuracy_score(y_test, y_pred)
-    precisionDT = precision_score(y_test, y_pred)
-    recallDT = recall_score(y_test, y_pred)
-    f1DT = f1_score(y_test, y_pred)
-
-    st.write(f"Accuracy: {accuracyDT:.4f}")
-    st.write(f"Precision: {precisionDT:.4f}")
-    st.write(f"Recall: {recallDT:.4f}")
-    st.write(f"F1 Score: {f1DT:.4f}")
-
-    y_score = best_dt.predict_proba(X_test_pca)[:, 1]
+    y_score = clasificador.predict_proba(X_test_pca)[:, 1]
     fpr, tpr, _ = roc_curve(y_test, y_score)
     roc_auc = auc(fpr, tpr)
 
@@ -87,3 +64,37 @@ if st.session_state.train_model:
     ax.set_title('ROC Curve - Decision Tree')
     ax.legend(loc="lower right")
     st.pyplot(fig)
+
+st.subheader("Entrenamiento Inicial del Árbol de Decisión")
+dt_default = DecisionTreeClassifier(criterion='gini', max_depth=None, min_samples_split=2, min_samples_leaf=1)
+entrenar_y_mostrar_modelo(dt_default)
+
+st.write("---")
+
+st.subheader("Nuevo Entrenamineto")
+
+with st.expander("Selecciona los Parámetros de Entrenamiento", expanded=not st.session_state.train_model):
+    temperatura = st.slider("Temperatura", min_value=0.0, max_value=50.0, value=25.0)
+    humedad = st.slider("Humedad Relativa (%)", min_value=0, max_value=100, value=50)
+    velocidad_viento = st.slider("Velocidad del Viento (km/h)", min_value=0, max_value=100, value=10)
+    lluvia = st.slider("Lluvia (mm)", min_value=0.0, max_value=50.0, value=0.0)
+
+    if st.button("Entrenar Modelo"):
+        st.session_state.train_model = True  
+        st.success("Entrenando el modelo...")
+
+if st.session_state.train_model:
+    dt_classifier = DecisionTreeClassifier()
+    param_grid = {
+        'criterion': ['gini', 'entropy'],
+        'max_depth': [None, 10, 20, 30],
+        'min_samples_split': [2, 5, 10],
+        'min_samples_leaf': [1, 2, 4]
+    }
+    
+    grid_search = GridSearchCV(dt_classifier, param_grid, cv=5)
+    grid_search.fit(X_train_pca, y_train)
+
+    st.subheader("Resultados del entrenamiento")
+    best_dt = grid_search.best_estimator_
+    entrenar_y_mostrar_modelo(best_dt)
