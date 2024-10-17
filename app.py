@@ -1,104 +1,89 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.tree import DecisionTreeClassifier
-from sklearn.decomposition import PCA
 from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_curve, auc
 import matplotlib.pyplot as plt
+from sklearn.decomposition import PCA
 
-@st.cache
+@st.cache_data
 def load_data():
     data = pd.read_csv('DATA SET.csv')
-    data.columns = data.columns.str.strip() 
+    data.columns = data.columns.str.strip()
     return data
 
-def preprocess_data(data):
+data = load_data()
+
+if "train_model" not in st.session_state:
+    st.session_state.train_model = False
+
+st.title("Predicción de Incendios Forestales con Árboles de Decisión")
+
+st.subheader("Selecciona los Parámetros del Modelo")
+
+with st.expander("Selecciona los Parámetros de Entrenamiento", expanded=not st.session_state.train_model):
+    temperatura = st.slider("Temperatura", min_value=0.0, max_value=50.0, value=25.0)
+    humedad = st.slider("Humedad Relativa (%)", min_value=0, max_value=100, value=50)
+    velocidad_viento = st.slider("Velocidad del Viento (km/h)", min_value=0, max_value=100, value=10)
+    lluvia = st.slider("Lluvia (mm)", min_value=0.0, max_value=50.0, value=0.0)
+    
+    if st.button("Entrenar Modelo"):
+        st.session_state.train_model = True  
+        st.success("Entrenando el modelo...")
+
+if st.session_state.train_model:
     X = data.drop(columns=['day', 'month', 'year', 'Classes'])
     y = data['Classes'].str.strip()
+
     label_encoder = LabelEncoder()
     y = label_encoder.fit_transform(y)
+
     X = X.apply(pd.to_numeric, errors='coerce')
-    return X, y
 
-@st.cache
-def train_model(X_train, y_train):
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+    pca = PCA(n_components=X_train.shape[1])
+    X_train_pca = pca.fit_transform(X_train)
+    X_test_pca = pca.transform(X_test)
+
     dt_classifier = DecisionTreeClassifier()
-
     param_grid = {
         'criterion': ['gini', 'entropy'],
         'max_depth': [None, 10, 20, 30],
         'min_samples_split': [2, 5, 10],
         'min_samples_leaf': [1, 2, 4]
     }
-
-    grid_search = GridSearchCV(dt_classifier, param_grid, cv=5)
-    grid_search.fit(X_train, y_train)
     
-    return grid_search.best_estimator_
+    grid_search = GridSearchCV(dt_classifier, param_grid, cv=5)
+    grid_search.fit(X_train_pca, y_train)
 
-def create_streamlit_ui():
-    st.set_page_config(page_title="Predicción de Incendios Forestales", layout="wide")
+    best_dt = grid_search.best_estimator_
+    y_pred = best_dt.predict(X_test_pca)
 
-    st.title("Predicción de Incendios Forestales")
-    st.subheader("Análisis de Riesgo de Incendios con Machine Learning")
+    accuracyDT = accuracy_score(y_test, y_pred)
+    precisionDT = precision_score(y_test, y_pred)
+    recallDT = recall_score(y_test, y_pred)
+    f1DT = f1_score(y_test, y_pred)
 
-    data = load_data()
-    st.write("Datos originales:")
-    st.dataframe(data.head())
+    st.write(f"Accuracy: {accuracyDT:.4f}")
+    st.write(f"Precision: {precisionDT:.4f}")
+    st.write(f"Recall: {recallDT:.4f}")
+    st.write(f"F1 Score: {f1DT:.4f}")
 
-    X, y = preprocess_data(data)
+    y_score = best_dt.predict_proba(X_test_pca)[:, 1]
+    fpr, tpr, _ = roc_curve(y_test, y_score)
+    roc_auc = auc(fpr, tpr)
 
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-
-    st.header("Entrenamiento del modelo")
-    if st.button("Entrenar modelo"):
-        best_dt = train_model(X_train, y_train)
-        y_pred = best_dt.predict(X_test)
-
-        accuracyDT = accuracy_score(y_test, y_pred)
-        precisionDT = precision_score(y_test, y_pred)
-        recallDT = recall_score(y_test, y_pred)
-        f1DT = f1_score(y_test, y_pred)
-
-        st.write(f"Accuracy: {accuracyDT}")
-        st.write(f"Precision: {precisionDT}")
-        st.write(f"Recall: {recallDT}")
-        st.write(f"F1 Score: {f1DT}")
-
-        st.header("Predicción de incendios")
-        col1, col2 = st.columns(2)
-        with col1:
-            temperature = st.slider("Temperatura (°C)", min_value=0.0, max_value=50.0, value=25.0)
-            rh = st.slider("Humedad Relativa (%)", min_value=0, max_value=100, value=50)
-            ws = st.slider("Velocidad del viento (km/h)", min_value=0.0, max_value=30.0, value=5.0)
-            rain = st.slider("Lluvia (mm)", min_value=0.0, max_value=100.0, value=0.0)
-        with col2:
-            ffmc = st.slider("FFMC", min_value=0.0, max_value=100.0, value=85.0)
-            dmc = st.slider("DMC", min_value=0.0, max_value=100.0, value=30.0)
-            dc = st.slider("DC", min_value=0.0, max_value=500.0, value=150.0)
-            isi = st.slider("ISI", min_value=0.0, max_value=100.0, value=10.0)
-        
-        bui = st.slider("BUI", min_value=0.0, max_value=100.0, value=60.0)
-        fwi = st.slider("FWI", min_value=0.0, max_value=100.0, value=15.0)
-
-        if st.button("Predecir"):
-            input_data = pd.DataFrame({
-                'Temperature': [temperature],
-                'RH': [rh],
-                'Ws': [ws],
-                'Rain': [rain],
-                'FFMC': [ffmc],
-                'DMC': [dmc],
-                'DC': [dc],
-                'ISI': [isi],
-                'BUI': [bui],
-                'FWI': [fwi]
-            })
-
-            prediction = best_dt.predict(input_data)[0]
-            st.subheader(f"Predicción de clase de incendio: {prediction}")
-
-if __name__ == "__main__":
-    create_streamlit_ui()
+    st.write(f"AUC: {roc_auc:.4f}")
+    
+    fig, ax = plt.subplots()
+    ax.plot(fpr, tpr, label=f'ROC curve (AUC = {roc_auc:.2f})')
+    ax.plot([0, 1], [0, 1], 'k--', label='No Skill')
+    ax.set_xlim([0.0, 1.0])
+    ax.set_ylim([0.0, 1.05])
+    ax.set_xlabel('False Positive Rate (FPR)')
+    ax.set_ylabel('True Positive Rate (TPR)')
+    ax.set_title('ROC Curve - Decision Tree')
+    ax.legend(loc="lower right")
+    st.pyplot(fig)
