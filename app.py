@@ -33,6 +33,10 @@ X_train_pca = pca.fit_transform(X_train)
 X_test_pca = pca.transform(X_test)
 
 st.title("Predicción de Incendios Forestales con Árboles de Decisión")
+st.write("""
+La aplicación utiliza un clasificador de árboles de decisión para predecir el nivel de riesgo de incendios forestales a partir de diferentes 
+características como la temperatura, humedad, velocidad del viento, cantidad de lluvia.
+""")
 
 def entrenar_y_mostrar_modelo(best_dt):
     y_pred = best_dt.predict(X_test_pca)
